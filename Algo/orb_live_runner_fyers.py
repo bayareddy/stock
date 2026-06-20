@@ -135,69 +135,114 @@ def main(
     symbol: str = "NSE:SBIN-EQ",
     qty: int = 1,
     days_back: int = 1,
+    poll_interval_sec: int = 5,
+    poll_from_time: str = "09:30",
+    poll_until_time: str = "15:20",
 ):
-    # Fetch recent candles
-    end_dt = datetime.utcnow() - timedelta(days=1)
-    start_dt = end_dt - timedelta(days=days_back)
-    print(f"Fetching candles for {symbol} from {start_dt} to {end_dt}")
-    range_from = _to_yyyy_mm_dd(start_dt)
-    range_to = _to_yyyy_mm_dd(end_dt)
+    """Live ORB runner.
 
-    df = fetch_fyers_intraday_5min(symbol=symbol, range_from=range_from, range_to=range_to)
-    print('df head: ',df.head())
-    if df.empty:
-        # Fyers can return no_data for some date ranges (weekends/holidays/market hours).
-        # Retry with a smaller rolling window.
-        for retry_days_back in [2, 1, 0]:
-            start_dt_retry = end_dt - timedelta(days=retry_days_back)
-            range_from_retry = _to_yyyy_mm_dd(start_dt_retry)
-            range_to_retry = _to_yyyy_mm_dd(end_dt)
-            print(f"Retrying candle fetch for {symbol}: {range_from_retry} -> {range_to_retry}")
-            df = fetch_fyers_intraday_5min(
-                symbol=symbol,
-                range_from=range_from_retry,
-                range_to=range_to_retry,
-            )
-            if not df.empty:
-                break
+    Behavior (per user request):
+    - Start acting at 09:30
+    - Re-run every ~5 seconds
+    - Stop acting after 15:20
 
-    if df.empty:
-        raise RuntimeError(f"No candle data returned for {symbol} using initial and retry windows")
+    Strategy gating:
+    - ORBBacktester itself only opens entries in 09:30-15:00 window.
+    - Here we just repeatedly fetch+run and place orders idempotently.
+    """
 
+    import time
 
-    backtester = ORBBacktester(initial_capital=100000.0)
-    trades_df, _equity = backtester.run(df)
+    def _time_str_to_minutes(t: str) -> int:
+        hh, mm = t.split(":")
+        return int(hh) * 60 + int(mm)
 
-    latest = _pick_latest_trade_signal(trades_df)
-    print(f"Latest trade signal for {symbol}: {latest}")
-    if latest is None:
-        print("No trade signal found")
-        return
+    poll_from_m = _time_str_to_minutes(poll_from_time)
+    poll_until_m = _time_str_to_minutes(poll_until_time)
 
-    side = latest["side"]  # 'long'/'short'
-    entry_price = float(latest["entry_price"])
-    sl_price = float(latest["sl"])
-    tp_price = float(latest["tp"])
-
-    # Place orders
+    # Create manager once
     om = FyersORBOrderManager()
-    # pass only stock code to manager; it will format NSE:...-EQ
     stock_code = symbol.replace("NSE:", "").replace("-EQ", "")
 
-    resp = om.place_entry_and_exits_separate(
-        exchange_symbol=stock_code,
-        qty=qty,
-        side=side,
-        entry_price=entry_price,
-        sl_price=sl_price,
-        tp_price=tp_price,
-        skip_if_position_exists=True,
-    )
+    while True:
+        now = pd.Timestamp.utcnow().tz_localize("UTC").tz_convert("Asia/kolkata")
+        minute_now = now.hour * 60 + now.minute
 
-    print("ORB live order management response:")
-    print(resp)
+        if minute_now > poll_until_m:
+            print(f"Exiting runner at {now} (>{poll_until_time})")
+            return
+
+        if minute_now >= poll_from_m:
+            end_dt = datetime.utcnow()  # today in UTC window; fyers handles range
+            start_dt = end_dt - timedelta(days=days_back)
+
+            range_from = _to_yyyy_mm_dd(start_dt)
+            range_to = _to_yyyy_mm_dd(end_dt)
+
+            print(f"Fetching candles for {symbol} from {range_from} to {range_to}")
+            df = fetch_fyers_intraday_5min(
+                symbol=symbol,
+                range_from=range_from,
+                range_to=range_to,
+            )
+
+            if df.empty:
+                # Retry with smaller windows
+                for retry_days_back in [2, 1, 0]:
+                    start_dt_retry = end_dt - timedelta(days=retry_days_back)
+                    range_from_retry = _to_yyyy_mm_dd(start_dt_retry)
+                    range_to_retry = _to_yyyy_mm_dd(end_dt)
+                    print(
+                        f"Retrying candle fetch for {symbol}: {range_from_retry} -> {range_to_retry}"
+                    )
+                    df = fetch_fyers_intraday_5min(
+                        symbol=symbol,
+                        range_from=range_from_retry,
+                        range_to=range_to_retry,
+                    )
+                    if not df.empty:
+                        break
+
+            if df.empty:
+                print(f"No candle data returned for {symbol}; will retry")
+                time.sleep(poll_interval_sec)
+                continue
+
+            backtester = ORBBacktester(initial_capital=100000.0)
+            trades_df, _equity = backtester.run(df)
+
+            latest = _pick_latest_trade_signal(trades_df)
+            if latest is None:
+                print("No trade signal found; will retry")
+                time.sleep(poll_interval_sec)
+                continue
+
+            side = latest["side"]
+            entry_price = float(latest["entry_price"])
+            sl_price = float(latest["sl"])
+            tp_price = float(latest["tp"])
+
+            print(
+                f"Latest trade: side={side}, entry={entry_price}, sl={sl_price}, tp={tp_price}"
+            )
+
+            resp = om.place_entry_and_exits_separate(
+                exchange_symbol=stock_code,
+                qty=qty,
+                side=side,
+                entry_price=entry_price,
+                sl_price=sl_price,
+                tp_price=tp_price,
+                skip_if_position_exists=True,
+            )
+
+            print("ORB live order management response:")
+            print(resp)
+
+        time.sleep(poll_interval_sec)
 
 
 if __name__ == "__main__":
     main()
+
 
