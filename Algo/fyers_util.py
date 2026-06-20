@@ -4,23 +4,28 @@ import pandas as pd
 
 columns_names = ['Date','Open','High','Low','Close','Volume']
 
+FYERS_CLIENT_ID = "Z4O9BSFX7K-100"
+access_token='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiZDoxIiwiZDoyIiwieDowIiwieDoxIiwieDoyIl0sImF0X2hhc2giOiJnQUFBQUFCcU5qX2hhc25vclB3bDRBcUJCNWl6d3NTb0JjS3hVVVMySFdzNjNIeTFkeDZaUC1BSG83aEQtZ0RwaWZXbFBaSlQwSDg5VHpvRzZLTGptNjBWZ1kzbF9Mc1NJek9vUFFfOUhXT1d0eXVMMURSZllIWT0iLCJkaXNwbGF5X25hbWUiOiIiLCJvbXMiOiJLMSIsImhzbV9rZXkiOiI2MDBiMGYzNTNjNmM5MzEyOGQ1NTAwMzdlYzg3MDU5Y2JlMzUyN2FkMTczYWZiMDkxNTJjMTY5ZCIsImlzRGRwaUVuYWJsZWQiOiJZIiwiaXNNdGZFbmFibGVkIjoiWSIsImZ5X2lkIjoiWFAxNDE4NCIsImFwcFR5cGUiOjEwMCwiZXhwIjoxNzgyMDAxODAwLCJpYXQiOjE3ODE5NDAxOTMsImlzcyI6ImFwaS5meWVycy5pbiIsIm5iZiI6MTc4MTk0MDE5Mywic3ViIjoiYWNjZXNzX3Rva2VuIn0.3YkcH7YFs65hR_JDcImCvO1GK8Xa_1g4PNgrRanGyuc'
+FYERS_SECRET_KEY = "4YW3EMFX5U"  # not used for history calls; kept for completeness
+FYERS_REDIRECT_URI = "https://www.google.com/"
+response_type="code"
+
 def authenticate():
-    client_id="Z4O9BSFX7K-100"
-    secret_key="4YW3EMFX5U"
-    redirect_uri="https://www.google.com/"
-    response_type="code"
-    session = fyersModel.SessionModel(client_id=client_id,secret_key=secret_key,redirect_uri=redirect_uri,response_type=response_type)
+   # client_id="Z4O9BSFX7K-100"
+    #secret_key="4YW3EMFX5U"
+    #redirect_uri="https://www.google.com/"
+    session = fyersModel.SessionModel(client_id=FYERS_CLIENT_ID,secret_key=FYERS_SECRET_KEY,redirect_uri=FYERS_REDIRECT_URI,response_type=response_type)
     print(session.generate_authcode())
 
 def authorization(url):
     grant_type = "authorization_code"
-    client_id="Z4O9BSFX7K-100"
-    secret_key="4YW3EMFX5U"
-    redirect_uri="https://www.google.com/"
+    #client_id="Z4O9BSFX7K-100"
+    secret_key=FYERS_SECRET_KEY
+    redirect_uri=FYERS_REDIRECT_URI
     response_type="code"
     auth_code=url.split('&')[2].split('=')[1]
     #print(auth_code)
-    session = fyersModel.SessionModel(client_id=client_id,secret_key=secret_key, redirect_uri=redirect_uri, response_type=response_type, grant_type=grant_type)
+    session = fyersModel.SessionModel(client_id=FYERS_CLIENT_ID,secret_key=FYERS_SECRET_KEY, redirect_uri=FYERS_REDIRECT_URI, response_type=response_type, grant_type=grant_type)
     session.set_token(auth_code)
     token=session.generate_token()
     #print('token->',token)
@@ -51,7 +56,7 @@ def open_file_in_same_directory(file_name):
     
 def fyersObj():
     file_r = open("D:/bayareddy/learn/AlgoTrading/backtesting/access_token.txt","r+")
-    fyers = fyersModel.FyersModel(client_id="Z4O9BSFX7K-100", is_async=False, token=file_r.read(), log_path=os.getcwd())
+    fyers = fyersModel.FyersModel(client_id=FYERS_CLIENT_ID, is_async=False, token=access_token, log_path=os.getcwd())
     #fyers = fyersModel.FyersModel(client_id="Z4O9BSFX7K-100", is_async=False, token=open_file_in_same_directory('access_token.txt'), log_path=os.getcwd())
     return fyers
 
